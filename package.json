@@ -6,7 +6,9 @@
 	"scripts": {
 		"clean": "rimraf dist",
 		"build": "npm run clean && tsc -p tsconfig.json",
-		"start": "node --env-file .env dist/index.js"
+		"start": "node --env-file .env dist/index.js",
+		"get:test": "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"hello\",\"arguments\":{\"name\":\"Elisandro Mello\"}}}\\n' | node dist/index.js",
+		"get:test2": "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"hello\",\"arguments\":{\"name\":\"Elisandro Mello\", \"age\": 30}}}\\n' | node dist/index.js"
 	},
 	"keywords": [],
 	"author": "",

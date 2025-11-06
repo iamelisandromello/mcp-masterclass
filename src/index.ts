@@ -1,8 +1,39 @@
-console.error("Hello, Quotes MCP Server!");
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
-console.error(
-	"MCP Server is running... ",
-	process.env.MCP_SERVER_NAME || "Default MCP Server",
+const server = new McpServer({
+	name: "quotes",
+	version: "1.0.0",
+	capabilities: {
+		resources: {},
+		tools: {},
+	},
+});
+
+server.tool(
+	"hello",
+	"Ferramenta de Teste",
+	{
+		name: z.string().optional().describe("Seu Nome"),
+		age: z.number().optional().describe("Sua Idade"),
+	},
+	async (args) => {
+		return {
+			content: [
+				{
+					type: "text",
+					text: `Hello, ${args.name || "world"}! ! Você tem ${args.age} anos.`,
+				},
+			],
+		};
+	},
 );
 
-process.exit(0);
+async function main() {
+	const trasport = new StdioServerTransport();
+	await server.connect(trasport);
+	console.error("Quotes MCP Server is running...");
+}
+
+main();
