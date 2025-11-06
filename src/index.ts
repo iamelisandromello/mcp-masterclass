@@ -29,37 +29,96 @@ const formatBRL = (value: number): string => {
 	}).format(value);
 };
 
+/* 
+Personalização de Erros e debug 
+*/
+enum ApiErrorType {
+	NETWORK_ERROR = "NETWORK_ERROR",
+	TIMEOUT_ERROR = "TIMEOUT_ERROR",
+	API_ERROR = "API_ERROR",
+	VALDATION_ERROR = "VALIDATION_ERROR",
+	RATE_LIMIT_ERROR = "RATE_LIMIT_ERROR",
+}
+
+class ApiError extends Error {
+	constructor(
+		public type: ApiErrorType,
+		message: string,
+		public originalError?: any,
+	) {
+		super(message);
+		this.name = "ApiError";
+	}
+}
+
+function debugLog(message: string, data?: any) {
+	if (process.env.DEBUG !== "true") return true;
+
+	const timestamp = new Date().toISOString();
+	const logMessage = data
+		? `[${timestamp}] ${{ message }} ${JSON.stringify(data, null, 2)}`
+		: `[${timestamp}] ${{ message }}`;
+
+	console.error(logMessage);
+}
+
 server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
-	const response = await fetch(
-		"https://economia.awesomeapi.com.br/json/last/USD-BRL",
-	);
-	console.error("Fetching Dolar quotation...", response.body);
+	try {
+		debugLog("Fetching Dólar quotation...");
 
-	const raw = await response.json();
-	console.error("Raw Dolar data:", raw);
-	const parsed = DolarSchema.parse(raw);
-	console.error("Parsed Dolar data:", parsed);
+		const response = await fetch(
+			"https://economia.awesomeapi.com.br/json/last/USD-BRL",
+		);
 
-	const dolar = parsed.USDBRL;
-	console.error("Dolar quotation:", dolar);
-	const bid = parseFloat(dolar.bid);
-	console.error("Dolar bid:", bid);
-	const ask = parseFloat(dolar.ask);
-	console.error("Dolar ask:", ask);
+		if (!response.ok) {
+			throw new ApiError(
+				ApiErrorType.API_ERROR,
+				`HTTP ${response.status} - ${response.statusText}`,
+			);
+		}
 
-	const result = `Dólar (${dolar.code}/${dolar.codein})
-Compra: ${formatBRL(bid)} | Venda: ${formatBRL(ask)}`;
+		const raw = await response.json();
+		const parsed = DolarSchema.safeParse(raw);
 
-	console.error("Result Dolar quotation:", result);
+		if (!parsed.success) {
+			debugLog("Validation error", parsed.error);
+			throw new ApiError(
+				ApiErrorType.VALDATION_ERROR,
+				"Formato inesperado da resposta",
+				parsed.error,
+			);
+		}
 
-	return {
-		content: [
-			{
-				type: "text",
-				text: result,
-			},
-		],
-	};
+		const dolar = parsed.data.USDBRL;
+		const bid = parseFloat(dolar.bid);
+		const ask = parseFloat(dolar.ask);
+
+		const result = `Dólar (${dolar.code}/${dolar.codein})
+  Compra: ${formatBRL(bid)} | Venda: ${formatBRL(ask)}`;
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: result,
+				},
+			],
+		};
+	} catch (error) {
+		const errorMsg =
+			error instanceof ApiError
+				? error.message
+				: "Erro inesperado ao buscar cotação do dolar";
+		debugLog("Error fetching Dólar quotation", error);
+		return {
+			content: [
+				{
+					type: "text",
+					text: errorMsg,
+				},
+			],
+		};
+	}
 });
 
 async function main() {
