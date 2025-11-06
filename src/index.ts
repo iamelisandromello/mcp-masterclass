@@ -62,22 +62,96 @@ function debugLog(message: string, data?: any) {
 	console.error(logMessage);
 }
 
+/*
+  Abstração de Requisção HTTP 
+  Pattern Retry
+  with Backoff
+ */
+
+interface RequestConfig {
+	maxRetries: number;
+	timeoutMs: number;
+	backoffMs: number;
+}
+
+const resquestConfig: RequestConfig = {
+	maxRetries: 3,
+	timeoutMs: 8000,
+	backoffMs: 1000,
+};
+
+async function makeRequestWithRetry<T>(
+	url: string,
+	config: RequestConfig = resquestConfig,
+): Promise<T> {
+	let lastError: any;
+
+	for (let attemp = 1; attemp <= config.maxRetries; attemp++) {
+		const controller = new AbortController();
+
+		const timeout = setTimeout(() => {
+			controller.abort();
+		}, config.timeoutMs);
+
+		try {
+			const response = await fetch(url, {
+				headers: {
+					"USER-AGENT": "quotes-app/1.0.0",
+					ACCEPT: "application/json",
+				},
+				signal: controller.signal,
+			});
+
+			clearTimeout(timeout);
+
+			if (!response.ok) {
+				throw new ApiError(
+					ApiErrorType.API_ERROR,
+					`HTTP ${response.status} - ${response.statusText}`,
+				);
+			}
+
+			const data = (await response.json()) as T;
+			debugLog(`Request successful on attempt ${attemp}`);
+			return data;
+		} catch (error) {
+			clearTimeout(timeout);
+			lastError = error;
+
+			if (error instanceof Error && error.name === "AbortError") {
+				lastError = new ApiError(
+					ApiErrorType.TIMEOUT_ERROR,
+					`Request timed out after ${config.timeoutMs}ms`,
+					error,
+				);
+			}
+
+			debugLog(`Request failed on attempt ${attemp}`, lastError.message);
+
+			//Exponential Backoff
+			if (attemp < config.maxRetries) {
+				const backoffTime = config.backoffMs * attemp;
+				debugLog(`⏳ Aguardando ${backoffTime}ms antes da próxima tentativa`);
+				await new Promise((resolve) => setTimeout(resolve, backoffTime));
+			}
+		}
+	}
+
+	throw lastError;
+}
+
+/*
+TOOLS
+*/
+
 server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
 	try {
 		debugLog("Fetching Dólar quotation...");
 
-		const response = await fetch(
+		const raw = await makeRequestWithRetry<unknown>(
 			"https://economia.awesomeapi.com.br/json/last/USD-BRL",
 		);
 
-		if (!response.ok) {
-			throw new ApiError(
-				ApiErrorType.API_ERROR,
-				`HTTP ${response.status} - ${response.statusText}`,
-			);
-		}
-
-		const raw = await response.json();
 		const parsed = DolarSchema.safeParse(raw);
 
 		if (!parsed.success) {
@@ -93,8 +167,10 @@ server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
 		const bid = parseFloat(dolar.bid);
 		const ask = parseFloat(dolar.ask);
 
-		const result = `Dólar (${dolar.code}/${dolar.codein})
-  Compra: ${formatBRL(bid)} | Venda: ${formatBRL(ask)}`;
+		const result = `
+      Dólar (${dolar.code}/${dolar.codein})
+      Compra: ${formatBRL(bid)} | Venda: ${formatBRL(ask)}
+    `;
 
 		return {
 			content: [
