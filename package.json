@@ -1,0 +1,25 @@
+{
+	"name": "mcp-masterclass",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"clean": "rimraf dist",
+		"build": "npm run clean && tsc -p tsconfig.json",
+		"start": "node --env-file .env dist/index.js"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.21.0",
+		"rimraf": "^6.1.0",
+		"zod": "^3.25.76"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.0",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.3"
+	}
+}
