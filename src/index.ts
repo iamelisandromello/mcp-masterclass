@@ -373,6 +373,75 @@ const cacheConfig: CacheConfig = {
 
 const cache = new CacheManager(cacheConfig);
 
+// ============================================
+// RATE LIMIIT
+// ============================================
+interface RateLimitConfig {
+	maxRequests: number;
+	windowMs: number;
+}
+
+class RateLimiter {
+	private requests = new Map<string, number[]>();
+
+	constructor(private config: RateLimitConfig) {}
+
+	canMakeRequest(key: string): boolean {
+		const now = Date.now();
+		const request = this.requests.get(key) || [];
+
+		const validRequests = request.filter(
+			(time) => now - time < this.config.windowMs,
+		);
+
+		if (validRequests.length >= this.config.maxRequests) {
+			debugLog(
+				`Rate limit exceeded for key: ${key}: ${validRequests.length}/$this.config.maxRequests in window ${this.config.windowMs}ms`,
+			);
+			return false;
+		}
+
+		validRequests.push(now);
+		this.requests.set(key, validRequests);
+
+		return true;
+	}
+
+	cleanup(): void {
+		const now = Date.now();
+		for (const [key, requests] of this.requests.entries()) {
+			const validRequests = requests.filter(
+				(time) => now - time < this.config.windowMs,
+			);
+
+			if (validRequests.length === 0) {
+				this.requests.delete(key);
+			} else {
+				this.requests.set(key, validRequests);
+			}
+		}
+	}
+
+	getStats() {
+		return {
+			activeKeys: this.requests.size,
+			config: this.config,
+			details: Array.from(this.requests.entries()).map(([key, requests]) => ({
+				key,
+				requests: requests.length,
+			})),
+		};
+	}
+}
+
+// Configuração do Rate Limiter
+const rateLimitConfig: RateLimitConfig = {
+	maxRequests: 30,
+	windowMs: 60000, // 1 minuto
+};
+
+const rateLimiter = new RateLimiter(rateLimitConfig);
+
 /*
   Abstração de Requisção HTTP 
   Pattern Retry
@@ -405,6 +474,13 @@ async function makeRequestWithRetry<T>(
 	}
 
 	let lastError: any;
+	// Verificar rate limit
+	if (!rateLimiter.canMakeRequest(url)) {
+		throw new ApiError(
+			ApiErrorType.RATE_LIMIT_ERROR,
+			`Rate limit excedido. Tente novamente em alguns momentos.`,
+		);
+	}
 
 	for (let attemp = 1; attemp <= config.maxRetries; attemp++) {
 		const controller = new AbortController();
@@ -528,6 +604,48 @@ server.tool(
 					{
 						type: "text",
 						text: "❌ Erro ao obter estatísticas do cache",
+					},
+				],
+			};
+		}
+	},
+);
+
+// ============================================
+// TOOL: rate_limit_stats
+// ============================================
+server.tool(
+	"rate_limits_stats",
+	"Obter estatísticas do rate limiter",
+	{},
+	async () => {
+		try {
+			const stats = rateLimiter.getStats();
+
+			const report = `🚦 Estatísticas do Rate Limiter
+
+  📊 Configuração:
+  - Máximo de requisições: ${stats.config.maxRequests}
+  - Janela de tempo: ${stats.config.windowMs}ms (${stats.config.windowMs / 1000}s)
+
+  📈 Estado Atual:
+  - Chaves ativas: ${stats.activeKeys}
+
+  ${
+		stats.details.length > 0
+			? `📋 Detalhes por endpoint:
+  ${stats.details.map((d) => `- ${d.key.split("/").pop()}: ${d.requests} requisições`).join("\n")}`
+			: "✅ Nenhuma requisição recente"
+	}`;
+
+			return { content: [{ type: "text", text: report }] };
+		} catch (error) {
+			debugLog("❌ Erro ao obter stats do rate limiter:", error);
+			return {
+				content: [
+					{
+						type: "text",
+						text: "❌ Erro ao obter estatísticas do rate limiter",
 					},
 				],
 			};
