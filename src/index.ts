@@ -747,6 +747,9 @@ server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
 	}
 });
 
+// ============================================
+// TOOL: get_bitcoin
+// ============================================
 server.tool("get_bitcoin", "Obter cotação atual do Bitcoin", {}, async () => {
 	try {
 		debugLog("💰 Executando ferramenta: get_bitcoin");
@@ -779,6 +782,66 @@ server.tool("get_bitcoin", "Obter cotação atual do Bitcoin", {}, async () => {
 			error instanceof ApiError
 				? `❌ ${error.message}`
 				: "❌ Erro inesperado ao buscar cotação do Bitcoin";
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: errorMsg,
+				},
+			],
+		};
+	}
+});
+
+// ============================================
+// TOOL: get_ibov
+// ============================================
+server.tool("get_ibov", "Obter cotação atual do Ibovespa", {}, async () => {
+	try {
+		debugLog("💰 Executando ferramenta: get_ibov");
+
+		const raw = await makeRequestWithRetry<unknown>(API_IBOV);
+
+		const parsed = IbovSchema.safeParse(raw);
+
+		if (!parsed.success) {
+			debugLog("Erro de validação", parsed.error);
+			throw new ApiError(
+				ApiErrorType.VALDATION_ERROR,
+				"Resposta da API não veio no formato esperado",
+			);
+		}
+
+		const ibov = parsed.data.results[0];
+
+		if (
+			typeof ibov.regularMarketPrice !== "number" ||
+			!Number.isFinite(ibov.regularMarketPrice)
+		) {
+			throw new ApiError(
+				ApiErrorType.VALDATION_ERROR,
+				"Preço de mercado inválido na resposta da API",
+			);
+		}
+
+		const result = `Ibovespa (${ibov.symbol}): ${ibov.regularMarketPrice.toLocaleString("pt-BR")} ${ibov.currency}`;
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: result,
+				},
+			],
+		};
+	} catch (error) {
+		const errorMsg =
+			error instanceof ApiError
+				? `❌ ${error.message}`
+				: "❌ Erro inesperado ao buscar cotação do Ibovespa";
+
+		debugLog("❌ Erro na ferramenta get_ibov:", error);
 
 		return {
 			content: [
