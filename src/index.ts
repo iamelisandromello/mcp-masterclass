@@ -11,7 +11,9 @@ const server = new McpServer({
 	},
 });
 
-// Schema para cotação do dólar
+// ============================================
+// SCHEMAS DE VALIDAÇÃO
+// ============================================
 const DolarSchema = z.object({
 	USDBRL: z.object({
 		bid: z.string(),
@@ -19,6 +21,24 @@ const DolarSchema = z.object({
 		code: z.string(),
 		codein: z.string(),
 	}),
+});
+
+const BitcoinSchema = z.object({
+	bitcoin: z.object({
+		brl: z.number(),
+	}),
+});
+
+const IbovSchema = z.object({
+	results: z.array(
+		z.object({
+			symbol: z.string(),
+			regularMarketPrice: z.number(),
+			currency: z.string(),
+			regularMarketChange: z.number().optional(),
+			regularMarketChangePercent: z.number().optional(),
+		}),
+	),
 });
 
 // formatação do valor
@@ -460,6 +480,23 @@ const resquestConfig: RequestConfig = {
 	backoffMs: 1000,
 };
 
+/** URLs APIs Públicas */
+const API_DOLAR =
+	process.env.API_DOLAR_URL ||
+	"https://economia.awesomeapi.com.br/json/last/USD-BRL";
+const API_BITCOIN =
+	process.env.API_BITCOIN_URL ||
+	"https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl";
+const API_IBOV =
+	process.env.API_IBOV_URL || "https://brapi.dev/api/quote/^BVSP";
+
+/* ============================================
+  MAKE REQUEST WITH RETRY
+  - Verifica cache
+  - Verifica rate limit
+  - Tenta requisição com retries e backoff
+  - Salva no cache se sucesso
+============================================ */
 async function makeRequestWithRetry<T>(
 	url: string,
 	config: RequestConfig = resquestConfig,
@@ -698,6 +735,50 @@ server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
 					: "Erro inesperado ao buscar cotação do dólar";
 
 		debugLog("❌ Error fetching Dólar quotation", error);
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: errorMsg,
+				},
+			],
+		};
+	}
+});
+
+server.tool("get_bitcoin", "Obter cotação atual do Bitcoin", {}, async () => {
+	try {
+		debugLog("💰 Executando ferramenta: get_bitcoin");
+
+		const raw = await makeRequestWithRetry<unknown>(API_BITCOIN);
+
+		const parsed = BitcoinSchema.safeParse(raw);
+
+		if (!parsed.success) {
+			debugLog("Erro de validação", parsed.error);
+			throw new ApiError(
+				ApiErrorType.VALDATION_ERROR,
+				"Resposta da API não veio no formato esperado",
+			);
+		}
+
+		const btc = parsed.data.bitcoin.brl;
+		const result = `Bitcoin (BTC/BRL) ${formatBRL(btc)}`;
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: result,
+				},
+			],
+		};
+	} catch (error) {
+		const errorMsg =
+			error instanceof ApiError
+				? `❌ ${error.message}`
+				: "❌ Erro inesperado ao buscar cotação do Bitcoin";
 
 		return {
 			content: [
