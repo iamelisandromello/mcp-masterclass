@@ -974,9 +974,30 @@ setInterval(() => {
 // MAIN
 // ============================================
 async function main() {
-	const trasport = new StdioServerTransport();
-	await server.connect(trasport);
-	console.error("Quotes MCP Server is running...");
+	try {
+		debugLog("🚀 Iniciando Quotes MCP Server Enhanced v2.1.0");
+		debugLog("⚙️ Configurações:", {
+			cache: cacheConfig,
+			requests: requestConfig,
+			apis: { API_DOLAR, API_BITCOIN, API_IBOV },
+		});
+
+		const transport = new StdioServerTransport();
+		await server.connect(transport);
+
+		debugLog("✅ Quotes MCP Server Enhanced rodando no stdio");
+		debugLog(
+			"🎯 Ferramentas disponíveis: get_dolar, get_bitcoin, get_ibov, health_check, cache_stats, rate_limit_stats",
+		);
+	} catch (error) {
+		debugLog("💥 Erro fatal na inicialização:", error);
+		cache.destroy();
+		process.exit(1);
+	}
 }
 
-main();
+main().catch((error) => {
+	debugLog("💥 Erro fatal no main():", error);
+	cache.destroy();
+	process.exit(1);
+});
