@@ -474,7 +474,7 @@ interface RequestConfig {
 	backoffMs: number;
 }
 
-const resquestConfig: RequestConfig = {
+const requestConfig: RequestConfig = {
 	maxRetries: 3,
 	timeoutMs: 8000,
 	backoffMs: 1000,
@@ -499,7 +499,7 @@ const API_IBOV =
 ============================================ */
 async function makeRequestWithRetry<T>(
 	url: string,
-	config: RequestConfig = resquestConfig,
+	config: RequestConfig = requestConfig,
 	ttlMs = cacheConfig.defaultTtl,
 ): Promise<T> {
 	// Verificar cache primeiro
@@ -841,13 +841,85 @@ server.tool("get_ibov", "Obter cotação atual do Ibovespa", {}, async () => {
 				? `❌ ${error.message}`
 				: "❌ Erro inesperado ao buscar cotação do Ibovespa";
 
-		debugLog("❌ Erro na ferramenta get_ibov:", error);
+		debugLog("Erro na ferramenta get_ibov:", error);
 
 		return {
 			content: [
 				{
 					type: "text",
 					text: errorMsg,
+				},
+			],
+		};
+	}
+});
+
+// ============================================
+// TOOL: healt_check
+// ============================================
+server.tool("health_check", "Verificar saúde das APIs", {}, async () => {
+	try {
+		debugLog("Executando health check");
+
+		const apis = [
+			{ name: "DÓLAR", url: API_DOLAR },
+			{ name: "BITCOIN", url: API_BITCOIN },
+			{ name: "IBOV", url: API_IBOV },
+		];
+
+		const checks = await Promise.allSettled(
+			apis.map(async (api) => {
+				const start = Date.now();
+				try {
+					await makeRequestWithRetry(
+						api.url,
+						{ ...requestConfig, maxRetries: 1 },
+						5000,
+					);
+					return {
+						name: api.name,
+						status: "✅ OK",
+						responseTime: `${Date.now() - start}ms`,
+					};
+				} catch (error) {
+					return {
+						name: api.name,
+						status: "❌ ERRO",
+						error:
+							error instanceof ApiError ? error.message : "Erro desconhecido",
+					};
+				}
+			}),
+		);
+
+		const results = checks.map((check) =>
+			check.status === "fulfilled"
+				? check.value
+				: {
+						name: "UNKNOWN",
+						status: "❌ FALHA",
+						responseTime: "N/A",
+						error: "Erro ao executar verificação",
+					},
+		);
+
+		const healthReport = `🏥 Health Check - ${new Date().toLocaleString("pt-BR")}
+      📡 APIs: ${results.map((r) => `${r.status} ${r.name} (${r.responseTime || "N/A"})`).join("\n")}
+      ⚙️ Configurações:
+      - Timeout: ${requestConfig.timeoutMs}ms
+      - Max Retries: ${requestConfig.maxRetries}
+      - Rate Limit: ${rateLimitConfig.maxRequests} req/${rateLimitConfig.windowMs}ms
+      - Cache TTL: ${cacheConfig.defaultTtl}ms
+    `;
+
+		return { content: [{ type: "text", text: healthReport }] };
+	} catch (error) {
+		debugLog("❌ Erro no health check:", error);
+		return {
+			content: [
+				{
+					type: "text",
+					text: "❌ Erro ao executar health check",
 				},
 			],
 		};
