@@ -490,6 +490,16 @@ const API_BITCOIN =
 const API_IBOV =
 	process.env.API_IBOV_URL || "https://brapi.dev/api/quote/^BVSP";
 
+const USER_AGENT = process.env.USER_AGENT || "quotes-app/2.1.0";
+
+// --- Headers para requisições ---
+const getHeaders = (): Record<string, string> => ({
+	"User-Agent": USER_AGENT,
+	Accept: "application/json",
+	"Cache-Control": "no-cache",
+	"X-Requested-With": "XMLHttpRequest",
+});
+
 /* ============================================
   MAKE REQUEST WITH RETRY
   - Verifica cache
@@ -528,10 +538,7 @@ async function makeRequestWithRetry<T>(
 
 		try {
 			const response = await fetch(url, {
-				headers: {
-					"USER-AGENT": "quotes-app/1.0.0",
-					ACCEPT: "application/json",
-				},
+				headers: getHeaders(),
 				signal: controller.signal,
 			});
 
