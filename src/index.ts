@@ -933,6 +933,29 @@ server.tool("health_check", "Verificar saúde das APIs", {}, async () => {
 	}
 });
 
+// ============================================
+// HANDLE SHUTDOWN
+// ============================================
+process.on("SIGINT", () => {
+	debugLog("🛑 Recebido SIGINT, finalizando...");
+	cache.destroy();
+	process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+	debugLog("🛑 Recebido SIGTERM, finalizando...");
+	cache.destroy();
+	process.exit(0);
+});
+
+// Limpeza periódica do rate limiter
+setInterval(() => {
+	rateLimiter.cleanup();
+}, 60000);
+
+// ============================================
+// MAIN
+// ============================================
 async function main() {
 	const trasport = new StdioServerTransport();
 	await server.connect(trasport);
