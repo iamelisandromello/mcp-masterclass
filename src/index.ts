@@ -953,17 +953,20 @@ server.tool("health_check", "Verificar saúde das APIs", {}, async () => {
 // ============================================
 // HANDLE SHUTDOWN
 // ============================================
-process.on("SIGINT", () => {
-	debugLog("🛑 Recebido SIGINT, finalizando...");
-	cache.destroy();
-	process.exit(0);
-});
+// ✅ DRY (Don't Repeat Yourself)
+async function gracefulShutdown(signal: string) {
+	debugLog(`🛑 Recebido ${signal}, finalizando...`);
 
-process.on("SIGTERM", () => {
-	debugLog("🛑 Recebido SIGTERM, finalizando...");
-	cache.destroy();
+	// Cleanup em ordem
+	rateLimiter.cleanup(); // Limpeza final
+	cache.destroy(); // Limpa o timer interno do cache
+
+	debugLog("✅ Shutdown completo");
 	process.exit(0);
-});
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 // Limpeza periódica do rate limiter
 setInterval(() => {
