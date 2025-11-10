@@ -49,6 +49,16 @@ const formatBRL = (value: number): string => {
 	}).format(value);
 };
 
+// Validação de URLs
+function validateUrl(url: string): boolean {
+	try {
+		const parsedUrl = new URL(url);
+		return ["https:", "http:"].includes(parsedUrl.protocol);
+	} catch {
+		return false;
+	}
+}
+
 /* 
 Personalização de Erros e debug 
 */
@@ -489,6 +499,13 @@ const API_BITCOIN =
 	"https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl";
 const API_IBOV =
 	process.env.API_IBOV_URL || "https://brapi.dev/api/quote/^BVSP";
+
+const urlsToValidate = { API_DOLAR, API_BITCOIN, API_IBOV };
+for (const [name, url] of Object.entries(urlsToValidate)) {
+	if (!validateUrl(url)) {
+		throw new Error(`URL inválida configurada para ${name}: ${url}`);
+	}
+}
 
 const USER_AGENT = process.env.USER_AGENT || "quotes-app/2.1.0";
 
