@@ -2,6 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+// ============================================
+// MCP SERVER DEFINITION
+// ============================================
 const server = new McpServer({
 	name: "quotes",
 	version: "1.0.0",
@@ -12,9 +15,9 @@ const server = new McpServer({
 });
 
 // ============================================
-// SCHEMAS DE VALIDAÇÃO
+// VALIDATION SCHEMES
 // ============================================
-const DolarSchema = z.object({
+const DollarSchema = z.object({
 	USDBRL: z.object({
 		bid: z.string(),
 		ask: z.string(),
@@ -41,7 +44,10 @@ const IbovSchema = z.object({
 	),
 });
 
-// formatação do valor
+// ============================================
+// FUNCTIONS HELPERS
+// ============================================
+// FORMAT CURRENCY BRL
 const formatBRL = (value: number): string => {
 	return new Intl.NumberFormat("pt-BR", {
 		style: "currency",
@@ -49,7 +55,7 @@ const formatBRL = (value: number): string => {
 	}).format(value);
 };
 
-// Validação de URLs
+// URL VALIDATION
 function validateUrl(url: string): boolean {
 	try {
 		const parsedUrl = new URL(url);
@@ -59,9 +65,40 @@ function validateUrl(url: string): boolean {
 	}
 }
 
-/* 
-Personalização de Erros e debug 
-*/
+// DEBUG LOG HELPER
+function debugLog(message: string, data?: any, forceLog = false) {
+	const shouldLog = process.env.DEBUG === "true" || forceLog;
+
+	if (!shouldLog) return;
+
+	const timestamp = new Date().toISOString();
+	const logMessage = data
+		? `[${timestamp}] ${message} ${JSON.stringify(data, null, 2)}`
+		: `[${timestamp}] ${message}`;
+
+	console.error(logMessage);
+}
+
+// Helper to format duration in a readable format.
+function formatDuration(seconds: number): string {
+	if (seconds < 60) {
+		return `${seconds}s`;
+	} else if (seconds < 3600) {
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = seconds % 60;
+		return remainingSeconds > 0
+			? `${minutes}m ${remainingSeconds}s`
+			: `${minutes}m`;
+	} else {
+		const hours = Math.floor(seconds / 3600);
+		const minutes = Math.floor((seconds % 3600) / 60);
+		return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+	}
+}
+
+// ============================================
+// DEBUG ERROR HANDLING HELPER
+// ============================================
 enum ApiErrorType {
 	NETWORK_ERROR = "NETWORK_ERROR",
 	TIMEOUT_ERROR = "TIMEOUT_ERROR",
@@ -81,29 +118,13 @@ class ApiError extends Error {
 	}
 }
 
-// ============================================
-// DEBUG LOG HELPER
-// ============================================
-function debugLog(message: string, data?: any, forceLog = false) {
-	const shouldLog = process.env.DEBUG === "true" || forceLog;
-
-	if (!shouldLog) return;
-
-	const timestamp = new Date().toISOString();
-	const logMessage = data
-		? `[${timestamp}] ${message} ${JSON.stringify(data, null, 2)}`
-		: `[${timestamp}] ${message}`;
-
-	console.error(logMessage);
-}
-
-/* 
-  Cache Manager
-  TTL (Time To Live): 15s é bom para cotações (atualiza rápido mas não excessivo)
-  LRU eviction: Remove entradas mais antigas quando atinge limite
-  Cleanup periódico: Remove entradas expiradas automaticamente
-  Hits tracking: Permite análise de quais endpoints são mais usados 
-*/
+// ================================================================================
+//  Cache Manager
+// TTL (Time To Live): 15s is good for quotes (updates quickly but not excessively)
+// LRU eviction: Removes older entries when it reaches the limit
+// Periodic cleanup: Automatically removes expired entries
+// Hits tracking: Allows analysis of which endpoints are most used
+// ================================================================================
 
 interface CacheConfig {
 	defaultTtl: number;
@@ -113,8 +134,8 @@ interface CacheConfig {
 }
 
 interface CacheEntry {
-	createdAt: number; // Timestamp de criação (para TTL)
-	lastAccessTime: number; // Timestamp de último acesso (para LRU)
+	createdAt: number; // Creation timestamp (for TTL)
+	lastAccessTime: number; // Last access timestamp (for LRU)
 	value: any;
 	hits: number;
 }
@@ -142,7 +163,7 @@ class CacheManager {
 	private cleanupTimer?: NodeJS.Timeout;
 	private totalHits = 0;
 	private totalMisses = 0;
-	private isCleanupRunning = false; // Previne cleanup sobreposto
+	private isCleanupRunning = false;
 
 	constructor(private config: CacheConfig) {
 		if (config.enableCache) {
@@ -150,7 +171,7 @@ class CacheManager {
 			debugLog(
 				`Cache initialized | TTL: ${config.defaultTtl}ms | Max entries: ${config.maxEntries} | Cleanup interval: ${config.cleanupInterval}ms`,
 				null,
-				true, // Log crítico sempre visível
+				true, // Define the cache log as critical and configure it to always be visible.
 			);
 		} else {
 			debugLog("Cache disabled in configuration", null, true);
@@ -167,7 +188,6 @@ class CacheManager {
 		const effectiveTtl = ttlMs ?? this.config.defaultTtl;
 		const now = Date.now();
 
-		// Incrementa miss - entrada não existe
 		if (!entry) {
 			this.totalMisses++;
 			debugLog(
@@ -178,7 +198,6 @@ class CacheManager {
 
 		const age = now - entry.createdAt;
 
-		// Usa >= para consistência (expirou no momento exato do TTL)
 		if (age >= effectiveTtl) {
 			this.cache.delete(key);
 			this.totalMisses++;
@@ -188,7 +207,6 @@ class CacheManager {
 			return null;
 		}
 
-		// Incrementa hit
 		this.totalHits++;
 		entry.hits++;
 
@@ -208,7 +226,6 @@ class CacheManager {
 			return;
 		}
 
-		// Loop while para garantir que não ultrapasse maxEntries
 		while (this.cache.size >= this.config.maxEntries) {
 			debugLog(
 				`Cache at max entries (${this.config.maxEntries}) - evicting LRU`,
@@ -230,10 +247,10 @@ class CacheManager {
 		);
 	}
 
-	/**
-	 * LRU (Least Recently Used) Eviction
-	 * Remove a entrada que foi acessada há mais tempo
-	 */
+	// ==========================================================
+	// LRU (Least Recently Used) Eviction
+	// Removes the entry that was accessed the longest time ago
+	// ==========================================================
 	private evictLRU(): void {
 		let lruKey = "";
 		let lruTime = Date.now();
@@ -251,9 +268,9 @@ class CacheManager {
 		}
 	}
 
-	/**
-	 * Inicia timer de cleanup com tratamento de erro
-	 */
+	// ==========================================================
+	// Starts cleanup timer with error handling
+	// ==========================================================
 	private startCleanupTimer(): void {
 		this.cleanupTimer = setInterval(async () => {
 			try {
@@ -264,11 +281,11 @@ class CacheManager {
 		}, this.config.cleanupInterval);
 	}
 
-	/**
-	 * - Usa mesma lógica de expiração do get() (age >= TTL)
-	 * - Previne execução sobreposta
-	 * - Remove apenas entradas realmente expiradas
-	 */
+	// ==========================================================
+	// - Uses the same expiration logic as get() (age >= TTL)
+	// - Prevents overlapping execution
+	// - Removes only truly expired entries
+	// ==========================================================
 	private async cleanup(): Promise<void> {
 		// Previne cleanup sobreposto
 		if (this.isCleanupRunning) {
@@ -285,8 +302,8 @@ class CacheManager {
 			for (const [key, entry] of this.cache.entries()) {
 				const age = now - entry.createdAt;
 
-				// Usa >= e TTL simples (não 2x)
-				// Mesma lógica do get() para consistência
+				// Uses >= and simple TTL (not 2x)
+				// Same logic as get() for consistency
 				if (age >= this.config.defaultTtl) {
 					expiredKeys.push(key);
 					debugLog(
@@ -310,10 +327,10 @@ class CacheManager {
 		}
 	}
 
-	/**
-	 * - Conta apenas entradas válidas (não expiradas)
-	 * - Fornece dados precisos
-	 */
+	// ==========================================================
+	// - Only counts valid (non-expired) entries
+	// - Provides accurate data
+	// ==========================================================
 	getStats(): CacheStats {
 		const now = Date.now();
 		let activeEntries = 0;
@@ -327,7 +344,6 @@ class CacheManager {
 		for (const [key, entry] of this.cache.entries()) {
 			const age = now - entry.createdAt;
 
-			// Só conta entradas que ainda não expiraram
 			if (age < this.config.defaultTtl) {
 				activeEntries++;
 				entries.push({
@@ -342,20 +358,20 @@ class CacheManager {
 		const totalRequests = this.totalHits + this.totalMisses;
 
 		return {
-			size: activeEntries, // Apenas entradas válidas
+			size: activeEntries,
 			maxEntries: this.config.maxEntries,
 			totalHits: this.totalHits,
 			totalMisses: this.totalMisses,
 			hitRate: totalRequests > 0 ? (this.totalHits / totalRequests) * 100 : 0,
 			missRate:
 				totalRequests > 0 ? (this.totalMisses / totalRequests) * 100 : 0,
-			entries: entries.sort((a, b) => b.hits - a.hits), // Ordena por popularidade
+			entries: entries.sort((a, b) => b.hits - a.hits),
 		};
 	}
 
-	/**
-	 * Destroy Limpa timer antes de limpar cache
-	 */
+	// ==========================================================
+	// Destroy Limpa timer before cleaning cachex
+	// ==========================================================
 	destroy(): void {
 		debugLog("🧹 Destruindo cache...", null, true);
 
@@ -373,27 +389,8 @@ class CacheManager {
 	}
 }
 
-// ============================================
-// HELPER: Formatar duração em formato legível
-// ============================================
-function formatDuration(seconds: number): string {
-	if (seconds < 60) {
-		return `${seconds}s`;
-	} else if (seconds < 3600) {
-		const minutes = Math.floor(seconds / 60);
-		const remainingSeconds = seconds % 60;
-		return remainingSeconds > 0
-			? `${minutes}m ${remainingSeconds}s`
-			: `${minutes}m`;
-	} else {
-		const hours = Math.floor(seconds / 3600);
-		const minutes = Math.floor((seconds % 3600) / 60);
-		return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-	}
-}
-
-// Configuração do Cache
-// TTL padrão: 60 segundos (60000ms) - ajustado para permitir testes confiáveis
+// Cache Configuration
+// DEFAULT TTL: 60 SECONDS (60000ms)
 const cacheConfig: CacheConfig = {
 	defaultTtl: parseInt(process.env.CACHE_TTL || "60000", 10),
 	maxEntries: parseInt(process.env.CACHE_MAX_ENTRIES || "100", 10),
@@ -467,17 +464,17 @@ class RateLimiter {
 // Configuração do Rate Limiter
 const rateLimitConfig: RateLimitConfig = {
 	maxRequests: 30,
-	windowMs: 60000, // 1 minuto
+	windowMs: 60000, // 1 minute
 };
 
 const rateLimiter = new RateLimiter(rateLimitConfig);
 
-/*
-  Abstração de Requisção HTTP 
-  Pattern Retry
-  with Backoff
- */
-
+// ============================================
+// HTTP REQUEST ABSTRACTION
+// RETRY PATTERN
+// WITH BACKOFF
+// TIMEOUT HANDLING
+// ============================================
 interface RequestConfig {
 	maxRetries: number;
 	timeoutMs: number;
@@ -490,46 +487,52 @@ const requestConfig: RequestConfig = {
 	backoffMs: 1000,
 };
 
-/** URLs APIs Públicas */
-const API_DOLAR =
-	process.env.API_DOLAR_URL ||
+/** PUBLIC API URLs*/
+const API_DOLLAR =
+	process.env.API_DOLLAR_URL ||
 	"https://economia.awesomeapi.com.br/json/last/USD-BRL";
 const API_BITCOIN =
 	process.env.API_BITCOIN_URL ||
 	"https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl";
 const API_IBOV =
 	process.env.API_IBOV_URL || "https://brapi.dev/api/quote/^BVSP";
+const API_KEY_IBOV = process.env.API_IBOV_KEY || "demo_key";
 
-const urlsToValidate = { API_DOLAR, API_BITCOIN, API_IBOV };
+const urlsToValidate = { API_DOLLAR, API_BITCOIN, API_IBOV };
 for (const [name, url] of Object.entries(urlsToValidate)) {
 	if (!validateUrl(url)) {
 		throw new Error(`URL inválida configurada para ${name}: ${url}`);
 	}
 }
 
-const USER_AGENT = process.env.USER_AGENT || "quotes-app/2.1.0";
+const USER_AGENT = process.env.USER_AGENT || "quotes-app/0.1.0";
 
 // --- Headers para requisições ---
-const getHeaders = (): Record<string, string> => ({
+const getHeaders = (token = ""): Record<string, string> => ({
 	"User-Agent": USER_AGENT,
 	Accept: "application/json",
 	"Cache-Control": "no-cache",
 	"X-Requested-With": "XMLHttpRequest",
+	Authorization: `Bearer ${token}`,
+	"Content-Type": "application/json",
 });
 
-/* ============================================
-  MAKE REQUEST WITH RETRY
-  - Verifica cache
-  - Verifica rate limit
-  - Tenta requisição com retries e backoff
-  - Salva no cache se sucesso
-============================================ */
+// ============================================
+//  MAKE REQUEST WITH RETRY
+//  - Check cache
+//  - Check rate limit
+//  - Attempt request with retries and backoff
+//  - Save to cache if successful
+// ============================================
 async function makeRequestWithRetry<T>(
-	url: string,
+	params: {
+		url: string;
+		token?: string;
+	},
 	config: RequestConfig = requestConfig,
 	ttlMs = cacheConfig.defaultTtl,
 ): Promise<T> {
-	// Verificar cache primeiro
+	const { url, token = "" } = params;
 	const cached = cache.get<T>(url, ttlMs);
 
 	if (cached) {
@@ -538,7 +541,6 @@ async function makeRequestWithRetry<T>(
 	}
 
 	let lastError: any;
-	// Verificar rate limit
 	if (!rateLimiter.canMakeRequest(url)) {
 		throw new ApiError(
 			ApiErrorType.RATE_LIMIT_ERROR,
@@ -555,7 +557,7 @@ async function makeRequestWithRetry<T>(
 
 		try {
 			const response = await fetch(url, {
-				headers: getHeaders(),
+				headers: getHeaders(token),
 				signal: controller.signal,
 			});
 
@@ -571,7 +573,6 @@ async function makeRequestWithRetry<T>(
 			const data = (await response.json()) as T;
 			debugLog(`Request successful on attempt ${attemp}`);
 
-			// Salvar no cache
 			cache.set(url, data);
 
 			return data;
@@ -591,7 +592,7 @@ async function makeRequestWithRetry<T>(
 
 			//Exponential Backoff
 			if (attemp < config.maxRetries) {
-				const backoffTime = config.backoffMs * attemp;
+				const backoffTime = config.backoffMs * 2 ** (attemp - 1);
 				debugLog(`⏳ Aguardando ${backoffTime}ms antes da próxima tentativa`);
 				await new Promise((resolve) => setTimeout(resolve, backoffTime));
 			}
@@ -714,15 +715,15 @@ server.tool(
 	},
 );
 
-server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
+server.tool("get_dollar", "Obter cotação atual do Dólar", {}, async () => {
 	try {
 		debugLog("Fetching Dólar quotation...");
 
-		const raw = await makeRequestWithRetry<unknown>(
-			"https://economia.awesomeapi.com.br/json/last/USD-BRL",
-		);
+		const raw = await makeRequestWithRetry<unknown>({
+			url: API_DOLLAR,
+		});
 
-		const parsed = DolarSchema.safeParse(raw);
+		const parsed = DollarSchema.safeParse(raw);
 
 		if (!parsed.success) {
 			debugLog("Validation error", parsed.error);
@@ -733,12 +734,12 @@ server.tool("get_dolar", "Obter cotação atual do Dólar", {}, async () => {
 			);
 		}
 
-		const dolar = parsed.data.USDBRL;
-		const bid = parseFloat(dolar.bid);
-		const ask = parseFloat(dolar.ask);
+		const dollar = parsed.data.USDBRL;
+		const bid = parseFloat(dollar.bid);
+		const ask = parseFloat(dollar.ask);
 
 		const result = `
-      Dólar (${dolar.code}/${dolar.codein})
+      Dólar (${dollar.code}/${dollar.codein})
       Compra: ${formatBRL(bid)} | Venda: ${formatBRL(ask)}
     `;
 
@@ -778,7 +779,7 @@ server.tool("get_bitcoin", "Obter cotação atual do Bitcoin", {}, async () => {
 	try {
 		debugLog("💰 Executando ferramenta: get_bitcoin");
 
-		const raw = await makeRequestWithRetry<unknown>(API_BITCOIN);
+		const raw = await makeRequestWithRetry<unknown>({ url: API_BITCOIN });
 
 		const parsed = BitcoinSchema.safeParse(raw);
 
@@ -823,9 +824,12 @@ server.tool("get_bitcoin", "Obter cotação atual do Bitcoin", {}, async () => {
 // ============================================
 server.tool("get_ibov", "Obter cotação atual do Ibovespa", {}, async () => {
 	try {
-		debugLog("💰 Executando ferramenta: get_ibov");
+		debugLog("💰 Executando ferramenta: get_ibov:: ", API_KEY_IBOV);
 
-		const raw = await makeRequestWithRetry<unknown>(API_IBOV);
+		const raw = await makeRequestWithRetry<unknown>({
+			url: API_IBOV,
+			token: API_KEY_IBOV,
+		});
 
 		const parsed = IbovSchema.safeParse(raw);
 
@@ -886,7 +890,7 @@ server.tool("health_check", "Verificar saúde das APIs", {}, async () => {
 		debugLog("Executando health check");
 
 		const apis = [
-			{ name: "DÓLAR", url: API_DOLAR },
+			{ name: "DÓLAR", url: API_DOLLAR },
 			{ name: "BITCOIN", url: API_BITCOIN },
 			{ name: "IBOV", url: API_IBOV },
 		];
@@ -896,7 +900,7 @@ server.tool("health_check", "Verificar saúde das APIs", {}, async () => {
 				const start = Date.now();
 				try {
 					await makeRequestWithRetry(
-						api.url,
+						{ url: api.url },
 						{ ...requestConfig, maxRetries: 1 },
 						5000,
 					);
@@ -982,7 +986,7 @@ async function main() {
 		debugLog("⚙️ Configurações:", {
 			cache: cacheConfig,
 			requests: requestConfig,
-			apis: { API_DOLAR, API_BITCOIN, API_IBOV },
+			apis: { API_DOLLAR, API_BITCOIN, API_IBOV },
 		});
 
 		const transport = new StdioServerTransport();
@@ -990,7 +994,7 @@ async function main() {
 
 		debugLog("✅ Quotes MCP Server Enhanced rodando no stdio");
 		debugLog(
-			"🎯 Ferramentas disponíveis: get_dolar, get_bitcoin, get_ibov, health_check, cache_stats, rate_limit_stats",
+			"🎯 Ferramentas disponíveis: get_dollar, get_bitcoin, get_ibov, health_check, cache_stats, rate_limit_stats",
 		);
 	} catch (error) {
 		debugLog("💥 Erro fatal na inicialização:", error);
