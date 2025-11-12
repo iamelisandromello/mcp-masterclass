@@ -1,0 +1,33 @@
+{
+	"name": "mcp-masterclass",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"clean": "rimraf dist",
+		"build": "npm run clean && tsc -p tsconfig.json",
+		"dev": "node -r ts-node/register --env-file=.env src/index.ts",
+		"start": "node --env-file .env dist/index.js",
+		"get:dollar": "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"get_dollar\",\"arguments\":{}}}\\n' | node -r ts-node/register --env-file=.env  src/index.ts",
+		"get:bitcoin": "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_bitcoin\",\"arguments\":{}}}\\n' | node -r ts-node/register --env-file=.env  src/index.ts",
+		"get:ibov": "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"get_ibov\",\"arguments\":{}}}\\n' | node -r ts-node/register --env-file=.env  src/index.ts",
+		"// VERIFICAR ESTADO DO CACHE": "",
+		"cache-stats": "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"cache_stats\",\"arguments\":{}}}\\n' |  node -r ts-node/register --env-file=.env  src/index.ts",
+		"// HEALTH CHECK": "",
+		"health-check": "printf '{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"health_check\",\"arguments\":{}}}\\n' | node -r ts-node/register --env-file=.env  src/index.ts"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.21.0",
+		"rimraf": "^6.1.0",
+		"zod": "^3.25.76"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.0",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.3"
+	}
+}
